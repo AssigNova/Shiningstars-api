@@ -2,7 +2,15 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const path = require("path");
-const { createPost, getPosts, getPostsByCategory, getPostsByUser, updatePost, deletePost } = require("../controllers/postController");
+const {
+  createPost,
+  getPosts,
+  getPostsByCategory,
+  getPostsByUser,
+  updatePost,
+  deletePost,
+  getPostById,
+} = require("../controllers/postController");
 
 // Multer storage config
 const storage = multer.diskStorage({
@@ -24,9 +32,28 @@ router.get("/user/:userId", getPostsByUser);
 router.put("/:id", upload.single("media"), updatePost);
 router.delete("/:id", deletePost);
 
+// Get a single post by id
+router.get("/:id", getPostById);
+
+// Views routes
+const { incrementPostViews, getPostViews } = require("../controllers/postController");
+router.post("/:id/view", incrementPostViews); // Increment views
+router.get("/:id/views", getPostViews); // Get views
+
 // Like/Unlike/Comment routes
 router.post("/:id/like", require("../controllers/postController").likePost);
 router.post("/:id/unlike", require("../controllers/postController").unlikePost);
 router.post("/:id/comment", require("../controllers/postController").addComment);
+
+// Like/unlike a comment
+router.post("/:postId/comments/:commentId/like", require("../controllers/postController").likeComment);
+router.post("/:postId/comments/:commentId/unlike", require("../controllers/postController").unlikeComment);
+
+// Reply to a comment
+router.post("/:postId/comments/:commentId/reply", require("../controllers/postController").replyToComment);
+
+// Like/unlike a reply
+router.post("/:postId/comments/:commentId/replies/:replyId/like", require("../controllers/postController").likeReply);
+router.post("/:postId/comments/:commentId/replies/:replyId/unlike", require("../controllers/postController").unlikeReply);
 
 module.exports = router;

@@ -16,9 +16,31 @@ const PostSchema = new mongoose.Schema({
     department: { type: String, required: true },
   },
   timestamp: { type: String },
-  likes: { type: Number, default: 0 },
-  comments: { type: Number, default: 0 },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  comments: [
+    {
+      id: { type: Number },
+      author: { type: String },
+      user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      department: { type: String },
+      text: { type: String, required: true },
+      timestamp: { type: String },
+      likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      replies: [
+        {
+          id: { type: Number },
+          author: { type: String },
+          user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+          department: { type: String },
+          content: { type: String },
+          timestamp: { type: String },
+          likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+        },
+      ],
+    },
+  ],
   createdAt: { type: Date, default: Date.now },
+  views: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model("Post", PostSchema);
