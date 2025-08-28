@@ -16,7 +16,7 @@ app.use((req, res, next) => {
 });
 
 // Serve static files from uploads folder
-app.use("/public/uploads", express.static(path.join(__dirname, "/public/uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "/public/uploads")));
 
 // Routes
 app.use("/api/auth", require("./routes/auth"));
