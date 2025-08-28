@@ -22,10 +22,32 @@ const storage = multer.diskStorage({
     cb(null, Date.now() + "-" + file.fieldname + ext);
   },
 });
-const upload = multer({ storage });
 
-// CRUD routes
-router.post("/", upload.single("media"), createPost);
+// const upload = multer({ storage });
+
+// // CRUD routes
+// router.post("/", upload.single("media"), createPost);
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 2000 * 1024 * 1024 }, // e.g. 200MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("video/") || file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only video and image files are allowed"));
+    }
+  },
+});
+
+router.post("/", upload.single("media"), async (req, res) => {
+  try {
+    await createPost(req, res);
+  } catch (err) {
+    res.status(500).json({ message: "Upload failed", error: err.message });
+  }
+});
+
 router.get("/", getPosts);
 router.get("/category/:category", getPostsByCategory);
 router.get("/user/:userId", getPostsByUser);
