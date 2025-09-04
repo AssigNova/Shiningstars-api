@@ -30,8 +30,10 @@ exports.requestReset = async (req, res) => {
   const { email } = req.body;
   const user = await User.findOne({ email });
   if (!user) return res.status(404).json({ message: "Email not found" });
+
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  otpStore[email] = { otp, expires: Date.now() + 1000 * 60 * 10 };
+  otpStore[email] = { otp, expires: Date.now() + 1000 * 60 * 10, verified: false };
+
   try {
     await sendOtpEmail(email, otp);
     res.json({ message: "OTP sent to email" });
@@ -43,19 +45,32 @@ exports.requestReset = async (req, res) => {
 exports.verifyOtp = (req, res) => {
   const { email, otp } = req.body;
   const entry = otpStore[email];
-  if (!entry || entry.expires < Date.now()) return res.status(400).json({ message: "OTP invalid" });
+
+  if (!entry || entry.expires < Date.now()) return res.status(400).json({ message: "OTP invalid or expired" });
+
   if (entry.otp !== otp) return res.status(400).json({ message: "Invalid OTP" });
+
+  // Mark as verified
+  otpStore[email].verified = true;
+
   res.json({ message: "OTP verified" });
 };
 
 exports.resetPassword = async (req, res) => {
   const { email, password } = req.body;
   const entry = otpStore[email];
+
   if (!entry || entry.expires < Date.now()) return res.status(400).json({ message: "OTP expired" });
+
+  if (!entry.verified) return res.status(400).json({ message: "OTP not verified" });
+
   const user = await User.findOne({ email });
   if (!user) return res.status(404).json({ message: "User not found" });
+
   user.password = await bcrypt.hash(password, 10);
   await user.save();
+
   delete otpStore[email];
+
   res.json({ message: "Password reset successful" });
 };
