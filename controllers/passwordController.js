@@ -1,78 +1,105 @@
 const User = require("../models/User");
+const Otp = require("../models/Otp");
 const bcrypt = require("bcryptjs");
-const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
-// In-memory store for OTPs (replace with DB/Redis for production)
-const otpStore = {};
-
 function sendOtpEmail(email, otp) {
-  // Configure your SMTP transport here
   const transporter = nodemailer.createTransport({
-    host: "smtp.hostinger.com", // Hostinger SMTP server
-    port: 587, // use 587 (STARTTLS)
-    secure: false, // true = port 465, false = other ports
+    host: "smtp.hostinger.com",
+    port: 587,
+    secure: false,
     auth: {
-      user: "noreply.itcshiningstars@cosmosevents.in", // your full Hostinger email
-      pass: "Cosmos&Assignova@123", // password you set for this mailbox
+      user: "noreply.itcshiningstars@cosmosevents.in",
+      pass: "Cosmos&Assignova@123",
     },
   });
+
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
     subject: "Your OTP for Password Reset",
     text: `Your OTP is: ${otp}`,
   };
+
   return transporter.sendMail(mailOptions);
 }
 
 exports.requestReset = async (req, res) => {
   const { email } = req.body;
-  const user = await User.findOne({ email });
-  if (!user) return res.status(404).json({ message: "Email not found" });
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  otpStore[email] = { otp, expires: Date.now() + 1000 * 60 * 10, verified: false };
 
   try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "Email not found" });
+
+    // Delete any existing OTPs for this email
+    await Otp.deleteMany({ email });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Create new OTP document
+    await Otp.create({
+      email,
+      otp,
+      expiresAt,
+    });
+
     await sendOtpEmail(email, otp);
     res.json({ message: "OTP sent to email" });
-  } catch {
-    res.status(500).json({ message: "Failed to send OTP" });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to process request" });
   }
 };
 
-exports.verifyOtp = (req, res) => {
+exports.verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
-  const entry = otpStore[email];
 
-  console.log(email, "-", otpStore, "-", entry);
+  try {
+    const otpDoc = await Otp.findOne({ email });
 
-  if (!entry) return res.status(400).json({ message: "OTP invalid or expired" });
+    if (!otpDoc || otpDoc.expiresAt < new Date()) {
+      return res.status(400).json({ message: "OTP invalid or expired" });
+    }
 
-  if (entry.otp !== otp) return res.status(400).json({ message: "Invalid OTP" });
+    if (otpDoc.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
 
-  // Mark as verified
-  otpStore[email].verified = true;
+    // Mark as verified
+    otpDoc.verified = true;
+    await otpDoc.save();
 
-  res.json({ message: "OTP verified" });
+    res.json({ message: "OTP verified" });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to verify OTP" });
+  }
 };
 
 exports.resetPassword = async (req, res) => {
   const { email, password } = req.body;
-  const entry = otpStore[email];
 
-  if (!entry || entry.expires < Date.now()) return res.status(400).json({ message: "OTP expired" });
+  try {
+    const otpDoc = await Otp.findOne({ email });
 
-  if (!entry.verified) return res.status(400).json({ message: "OTP not verified" });
+    if (!otpDoc || otpDoc.expiresAt < new Date()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
 
-  const user = await User.findOne({ email });
-  if (!user) return res.status(404).json({ message: "User not found" });
+    if (!otpDoc.verified) {
+      return res.status(400).json({ message: "OTP not verified" });
+    }
 
-  user.password = await bcrypt.hash(password, 10);
-  await user.save();
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-  delete otpStore[email];
+    user.password = await bcrypt.hash(password, 10);
+    await user.save();
 
-  res.json({ message: "Password reset successful" });
+    // Delete the used OTP
+    await Otp.deleteOne({ email });
+
+    res.json({ message: "Password reset successful" });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to reset password" });
+  }
 };
