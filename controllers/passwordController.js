@@ -46,7 +46,9 @@ exports.verifyOtp = (req, res) => {
   const { email, otp } = req.body;
   const entry = otpStore[email];
 
-  if (!entry || entry.expires < Date.now()) return res.status(400).json({ message: "OTP invalid or expired" });
+  console.log(email, "-", otpStore, "-", entry);
+
+  if (!entry) return res.status(400).json({ message: "OTP invalid or expired" });
 
   if (entry.otp !== otp) return res.status(400).json({ message: "Invalid OTP" });
 
