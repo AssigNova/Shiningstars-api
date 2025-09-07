@@ -1,4 +1,5 @@
 const Post = require("../models/Post");
+const uploadToS3 = require("../utils/s3Upload");
 
 // exports.createPost = async (req, res) => {
 //   try {
@@ -40,16 +41,20 @@ const Post = require("../models/Post");
 //   }
 // };
 
+// Create a new post
 exports.createPost = async (req, res) => {
   try {
     const { title, description, category, participantType, department, status, type, content, timestamp, author, likes, comments } =
       req.body;
+
     let mediaPath = null;
-    if (req.file && req.file.location) {
-      mediaPath = req.file.location; // 👈 full S3 URL
+
+    if (req.file) {
+      // Upload to S3 instead of local /uploads
+      mediaPath = await uploadToS3(req.file);
     }
 
-    // Author must be an object with name and department
+    // Handle author parsing
     let authorObj = author;
     if (typeof author === "string") {
       try {
@@ -77,7 +82,8 @@ exports.createPost = async (req, res) => {
     await post.save();
     res.status(201).json(post);
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error creating post:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 

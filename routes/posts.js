@@ -67,7 +67,7 @@ const upload = multer({
   },
 });
 
-router.post("/", upload.single("media"), async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     await createPost(req, res);
   } catch (err) {
