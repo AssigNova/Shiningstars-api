@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const AWS = require("aws-sdk");
+const { S3Client } = require("@aws-sdk/client-s3");
 const multerS3 = require("multer-s3");
 const path = require("path");
 const {
@@ -31,9 +32,7 @@ const storage = multer.diskStorage({
 // router.post("/", upload.single("media"), createPost);
 
 // Create S3 instance (will use IAM Role on EC2 automatically)
-const s3 = new AWS.S3({
-  region: "us-east-1", // replace with your S3 bucket region
-});
+const s3 = new S3Client({ region: "us-east-1" })();
 
 // const upload = multer({
 //   storage,
@@ -67,7 +66,7 @@ const upload = multer({
   },
 });
 
-router.post("/", async (req, res) => {
+router.post("/", upload.single("media"), async (req, res) => {
   try {
     await createPost(req, res);
   } catch (err) {
