@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
+const AWS = require("aws-sdk");
+const multerS3 = require("multer-s3");
 const path = require("path");
 const {
   createPost,
@@ -28,9 +30,34 @@ const storage = multer.diskStorage({
 // // CRUD routes
 // router.post("/", upload.single("media"), createPost);
 
+// Create S3 instance (will use IAM Role on EC2 automatically)
+const s3 = new AWS.S3({
+  region: "us-east-1", // replace with your S3 bucket region
+});
+
+// const upload = multer({
+//   storage,
+//   limits: { fileSize: 2000 * 1024 * 1024 }, // e.g. 200MB max
+//   fileFilter: (req, file, cb) => {
+//     if (file.mimetype.startsWith("video/") || file.mimetype.startsWith("image/")) {
+//       cb(null, true);
+//     } else {
+//       cb(new Error("Only video and image files are allowed"));
+//     }
+//   },
+// });
+
 const upload = multer({
-  storage,
-  limits: { fileSize: 2000 * 1024 * 1024 }, // e.g. 200MB max
+  storage: multerS3({
+    s3: s3,
+    bucket: "cosmos-uploads-prod", // 👈 replace with your bucket name
+    acl: "public-read",
+    key: function (req, file, cb) {
+      const fileName = Date.now().toString() + path.extname(file.originalname);
+      cb(null, fileName);
+    },
+  }),
+  limits: { fileSize: 2000 * 1024 * 1024 }, // 200 MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("video/") || file.mimetype.startsWith("image/")) {
       cb(null, true);

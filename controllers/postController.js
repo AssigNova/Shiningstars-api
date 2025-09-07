@@ -1,6 +1,5 @@
 const Post = require("../models/Post");
 
-// // Create a new post
 // exports.createPost = async (req, res) => {
 //   try {
 //     const { title, description, category, participantType, department, status, type, content, timestamp, author, likes, comments } =
@@ -18,6 +17,7 @@ const Post = require("../models/Post");
 //         authorObj = { name: author, department };
 //       }
 //     }
+
 //     const post = new Post({
 //       title,
 //       description,
@@ -32,6 +32,7 @@ const Post = require("../models/Post");
 //       type,
 //       content: mediaPath || content,
 //     });
+
 //     await post.save();
 //     res.status(201).json(post);
 //   } catch (err) {
@@ -39,15 +40,15 @@ const Post = require("../models/Post");
 //   }
 // };
 
-// Create a new post
 exports.createPost = async (req, res) => {
   try {
     const { title, description, category, participantType, department, status, type, content, timestamp, author, likes, comments } =
       req.body;
     let mediaPath = null;
-    if (req.file) {
-      mediaPath = `/uploads/${req.file.filename}`;
+    if (req.file && req.file.location) {
+      mediaPath = req.file.location; // 👈 full S3 URL
     }
+
     // Author must be an object with name and department
     let authorObj = author;
     if (typeof author === "string") {
@@ -172,9 +173,10 @@ exports.updatePost = async (req, res) => {
     }
     // If file uploaded, update image/content
     if (req.file) {
-      updateData.image = `/uploads/${req.file.filename}`;
-      updateData.content = `/uploads/${req.file.filename}`;
+      updateData.image = req.file.location;
+      updateData.content = req.file.location;
     }
+
     const post = await Post.findByIdAndUpdate(id, updateData, { new: true });
     res.json(post);
   } catch (err) {
