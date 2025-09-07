@@ -49,8 +49,9 @@ const s3 = new S3Client({ region: "us-east-1" });
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: "cosmos-uploads-prod", // 👈 replace with your bucket name
-    acl: "public-read",
+    bucket: "cosmos-uploads-prod",
+    // Remove the following line:
+    // acl: "public-read",
     key: function (req, file, cb) {
       const fileName = Date.now().toString() + path.extname(file.originalname);
       cb(null, fileName);
