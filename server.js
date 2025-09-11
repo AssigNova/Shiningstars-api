@@ -21,6 +21,7 @@ app.use("/public/uploads", express.static(path.join(__dirname, "/public/uploads"
 // Routes
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/posts", require("./routes/posts"));
+app.use("/api/stats", require("./routes/stats"));
 app.use("/api", require("./routes/leaderboard"));
 const passwordRoutes = require("./routes/password");
 app.use("/api/password", passwordRoutes);
