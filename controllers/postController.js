@@ -160,28 +160,28 @@ exports.getPostViews = async (req, res) => {
 
 // Update a post
 exports.updatePost = async (req, res) => {
-  try {
-    const { id } = req.params;
-    let updateData = { ...req.body };
-    // If author is a stringified object, parse it
-    if (typeof updateData.author === "string") {
-      try {
-        updateData.author = JSON.parse(updateData.author);
-      } catch {
-        updateData.author = { name: updateData.author, department: updateData.department };
-      }
+  // try {
+  const { id } = req.params;
+  let updateData = { ...req.body };
+  // If author is a stringified object, parse it
+  if (typeof updateData.author === "string") {
+    try {
+      updateData.author = JSON.parse(updateData.author);
+    } catch {
+      updateData.author = { name: updateData.author, department: updateData.department };
     }
-    // If file uploaded, update image/content
-    if (req.file) {
-      updateData.image = req.file.location;
-      updateData.content = req.file.location;
-    }
-
-    const post = await Post.findByIdAndUpdate(id, updateData, { new: true });
-    res.json(post);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
   }
+  // If file uploaded, update image/content
+  if (req.file) {
+    updateData.image = req.file.location;
+    updateData.content = req.file.location;
+  }
+
+  const post = await Post.findByIdAndUpdate(id, updateData, { new: true });
+  res.json(post);
+  // } catch (err) {
+  //   res.status(500).json({ message: "Server error" });
+  // }
 };
 
 // Delete a post
