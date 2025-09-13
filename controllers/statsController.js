@@ -529,7 +529,7 @@ exports.getStatsByParticipantType = async (req, res) => {
         }
       }
       // Write sum for numeric columns (skip % columns)
-      const headerText = ws.getRow(4).getCell(col).value;
+      const headerText = ws.getRow(2).getCell(col).value;
       if (headerText && !headerText.toString().includes("%")) {
         totalsRow.getCell(col).value = sum;
         totalsRow.getCell(col).font = { bold: true };
