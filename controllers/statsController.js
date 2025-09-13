@@ -5,7 +5,6 @@ const Post = require("../models/Post"); // adjust path
 const User = require("../models/User"); // adjust path
 
 const router = express.Router();
-
 exports.getStats = async (req, res) => {
   try {
     // Step 1: Fetch distinct keys
@@ -27,7 +26,51 @@ exports.getStats = async (req, res) => {
       },
     ]);
 
-    // Organize data for quick lookup
+    // Step 3: Aggregate additional stats by department (posts)
+    // Total Entries, Unique Entries (count distinct titles), Total Likes, Total Comments
+    const deptStats = await Post.aggregate([
+      {
+        $group: {
+          _id: "$department",
+          totalEntries: { $sum: 1 },
+          uniqueEntries: { $addToSet: "$title" }, // Will count size later
+          totalLikes: { $sum: { $size: { $ifNull: ["$likes", []] } } },
+          totalComments: { $sum: { $size: { $ifNull: ["$comments", []] } } },
+        },
+      },
+      {
+        $project: {
+          totalEntries: 1,
+          uniqueEntriesCount: { $size: "$uniqueEntries" },
+          totalLikes: 1,
+          totalComments: 1,
+        },
+      },
+    ]);
+
+    // Step 4: Aggregate user count per department for total count of department
+    const userCounts = await User.aggregate([
+      {
+        $group: {
+          _id: "$department",
+          totalUsers: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Convert userCounts to an object for quick lookup
+    const userCountsMap = {};
+    userCounts.forEach((userStat) => {
+      userCountsMap[userStat._id] = userStat.totalUsers;
+    });
+
+    // Convert deptStats to an object for quick lookup
+    const deptStatsMap = {};
+    deptStats.forEach((d) => {
+      deptStatsMap[d._id] = d;
+    });
+
+    // Prepare data structure for category and participant type counts
     const data = {};
     for (const dept of departments) {
       data[dept] = {};
@@ -52,14 +95,29 @@ exports.getStats = async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet("Stats");
 
-    // Calculate total columns: dept + categories * participantTypes
-    const totalCols = 1 + categories.length * participantTypes.length;
+    // Additional columns to add at the end (based on reference excel columns requested)
+    const extraColumns = [
+      "Total Entries",
+      "Unique Entries",
+      "Total Likes",
+      "Total Comments",
+      "Count of Dep.",
+      "Unique Participation %",
+      "Participation % of Dep.",
+      "Department Scores",
+    ];
 
-    // Set column widths (no keys needed when setting manually)
+    // Calculate total columns: dept + categories * participantTypes + extra columns
+    const totalCols = 1 + categories.length * participantTypes.length + extraColumns.length;
+
+    // Set column widths
     const columns = [];
-    columns.push({ width: 25 }); // Department column wider for long names
-    for (let i = 1; i < totalCols; i++) {
+    columns.push({ width: 25 }); // Department column wider
+    for (let i = 1; i < 1 + categories.length * participantTypes.length; i++) {
       columns.push({ width: 18 }); // Category/participant columns
+    }
+    for (let i = 0; i < extraColumns.length; i++) {
+      columns.push({ width: 22 }); // Extra columns widths
     }
     ws.columns = columns;
 
@@ -80,7 +138,6 @@ exports.getStats = async (req, res) => {
     for (const cat of categories) {
       const startCol = colIndex;
       const endCol = colIndex + participantTypes.length - 1;
-
       // Merge category header row (row 1)
       ws.mergeCells(1, startCol, 1, endCol);
       const catHeader = ws.getCell(1, startCol);
@@ -92,7 +149,6 @@ exports.getStats = async (req, res) => {
       };
       catHeader.font = { bold: true, color: { argb: "FFFFFFFF" } };
       catHeader.alignment = { vertical: "middle", horizontal: "center" };
-
       // Participant type headers row 2-3 merged
       for (let i = 0; i < participantTypes.length; i++) {
         const ptCell = ws.getCell(2, colIndex + i);
@@ -109,8 +165,34 @@ exports.getStats = async (req, res) => {
       colIndex += participantTypes.length;
     }
 
-    // Style department column cells (rows 4+)
-    for (let r = 4; r < 4 + departments.length; r++) {
+    // Create merged header cells for extra columns starting at row 1, columns after categories*participantTypes + 1
+    const extraColsStart = 1 + categories.length * participantTypes.length + 1;
+    ws.mergeCells(1, extraColsStart, 3, totalCols);
+    const extraHeader = ws.getCell(1, extraColsStart);
+    extraHeader.value = "Additional Stats";
+    extraHeader.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF6A5ACD" }, // Slate Blue
+    };
+    extraHeader.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    extraHeader.alignment = { vertical: "middle", horizontal: "center" };
+
+    // Add extra column headers on row 4
+    for (let i = 0; i < extraColumns.length; i++) {
+      const cell = ws.getCell(4, extraColsStart + i);
+      cell.value = extraColumns[i];
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFADD8E6" }, // Light Blue
+      };
+      cell.font = { bold: true };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    }
+
+    // Style department column cells (rows 5+)
+    for (let r = 5; r < 5 + departments.length; r++) {
       const cell = ws.getCell(r, 1);
       cell.fill = {
         type: "pattern",
@@ -120,17 +202,46 @@ exports.getStats = async (req, res) => {
       cell.alignment = { vertical: "middle", horizontal: "left" };
     }
 
-    // Fill data starting at row 4
-    let rowIndex = 4;
+    // Fill data starting at row 5
+    let rowIndex = 5;
     for (const dept of departments) {
       ws.getCell(rowIndex, 1).value = dept;
       colIndex = 2;
+
+      // Fill categories and participant type counts
       for (const cat of categories) {
         for (const pt of participantTypes) {
-          ws.getCell(rowIndex, colIndex).value = data[dept][cat][pt] || 0;
+          ws.getCell(rowIndex, colIndex).value = data[dept]?.[cat]?.[pt] || 0;
           colIndex++;
         }
       }
+
+      // Fill additional stats columns
+      const stats = deptStatsMap[dept] || {
+        totalEntries: 0,
+        uniqueEntriesCount: 0,
+        totalLikes: 0,
+        totalComments: 0,
+      };
+      const totalUsers = userCountsMap[dept] || 0;
+
+      ws.getCell(rowIndex, colIndex++).value = stats.totalEntries || 0;
+      ws.getCell(rowIndex, colIndex++).value = stats.uniqueEntriesCount || 0;
+      ws.getCell(rowIndex, colIndex++).value = stats.totalLikes || 0;
+      ws.getCell(rowIndex, colIndex++).value = stats.totalComments || 0;
+      ws.getCell(rowIndex, colIndex++).value = totalUsers;
+
+      // Calculate Unique Participation % by Employees if totalUsers > 0
+      const uniqueParticipationPercent = totalUsers > 0 ? (stats.uniqueEntriesCount / totalUsers) * 100 : 0;
+      ws.getCell(rowIndex, colIndex++).value = uniqueParticipationPercent.toFixed(2) + "%";
+
+      // Participation % of Department - assume as uniqueEntriesCount / totalEntries to indicate participation ratio
+      const participationPercent = stats.totalEntries > 0 ? (stats.uniqueEntriesCount / stats.totalEntries) * 100 : 0;
+      ws.getCell(rowIndex, colIndex++).value = participationPercent.toFixed(2) + "%";
+
+      // Department Scores - since not clearly defined, we can set as 0 or some metric, optionally you can add your logic here
+      ws.getCell(rowIndex, colIndex++).value = 0;
+
       rowIndex++;
     }
 
