@@ -40,13 +40,25 @@ const Post = require("../models/Post");
 //   }
 // };
 
+// postController.js
+
 exports.createPost = async (req, res) => {
   try {
     const { title, description, category, participantType, department, status, type, content, timestamp, author, likes, comments } =
       req.body;
-    let mediaPath = null;
-    if (req.file && req.file.location) {
-      mediaPath = req.file.location; // 👈 full S3 URL
+
+    // Make sure to set the CLOUDFRONT_DOMAIN environment variable
+    const cloudfrontDomain = process.env.CLOUDFRONT_DOMAIN;
+    if (!cloudfrontDomain) {
+      return res.status(500).json({ message: "CloudFront domain is not configured." });
+    }
+
+    let mediaUrl = null;
+    if (req.file && req.file.key) {
+      // The key is the file name assigned by multer-s3
+      const fileKey = req.file.key;
+      // Construct the full URL using the CloudFront domain and the file key
+      mediaUrl = `https://${cloudfrontDomain}/${fileKey}`;
     }
 
     // Author must be an object with name and department
@@ -71,15 +83,57 @@ exports.createPost = async (req, res) => {
       timestamp,
       status: status || "published",
       type,
-      content: mediaPath || content,
+      content: mediaUrl || content, // Use the new CloudFront URL for media
     });
 
     await post.save();
     res.status(201).json(post);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// exports.createPost = async (req, res) => {
+//   try {
+//     const { title, description, category, participantType, department, status, type, content, timestamp, author, likes, comments } =
+//       req.body;
+//     let mediaPath = null;
+//     if (req.file && req.file.location) {
+//       mediaPath = req.file.location; // 👈 full S3 URL
+//     }
+
+//     // Author must be an object with name and department
+//     let authorObj = author;
+//     if (typeof author === "string") {
+//       try {
+//         authorObj = JSON.parse(author);
+//       } catch {
+//         authorObj = { name: author, department };
+//       }
+//     }
+
+//     const post = new Post({
+//       title,
+//       description,
+//       category,
+//       author: authorObj,
+//       department,
+//       participantType,
+//       likes: Array.isArray(likes) ? likes : [],
+//       comments: Array.isArray(comments) ? comments : [],
+//       timestamp,
+//       status: status || "published",
+//       type,
+//       content: mediaPath || content,
+//     });
+
+//     await post.save();
+//     res.status(201).json(post);
+//   } catch (err) {
+//     res.status(500).json({ message: "Server error" });
+//   }
+// };
 
 // Get all posts
 exports.getPosts = async (req, res) => {
