@@ -11,6 +11,9 @@ const sheetName = workbook.SheetNames[0];
 const sheet = workbook.Sheets[sheetName];
 const rows = xlsx.utils.sheet_to_json(sheet, { header: 1 });
 
+console.log("Reading Excel file from:", filePath);
+console.log("Available sheet names:", workbook.SheetNames);
+
 // API endpoint
 const API_URL = "http://localhost:5000/api/auth/register"; // adjust to your server
 
@@ -44,7 +47,7 @@ function excelDateToISO(excelDate) {
 }
 
 async function registerUsers() {
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = 266; i < rows.length; i++) {
     const row = rows[i];
     const employeeId = row[0]; // column A
     const name = row[2]; // column C
