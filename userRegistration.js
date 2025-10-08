@@ -3,7 +3,7 @@ const xlsx = require("xlsx");
 const axios = require("axios");
 
 // Path to your Excel file
-const filePath = "./users.xlsx";
+const filePath = "./users2.xlsx";
 
 // Load workbook
 const workbook = xlsx.readFile(filePath);
