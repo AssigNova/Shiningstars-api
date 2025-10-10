@@ -26,14 +26,39 @@ exports.getStats = async (req, res) => {
       },
     ]);
 
+    // // Step 3: Aggregate additional stats by department (posts)
+    // // Total Entries, Unique Entries (count distinct titles), Total Likes, Total Comments
+    // const deptStats = await Post.aggregate([
+    //   {
+    //     $group: {
+    //       _id: "$department",
+    //       totalEntries: { $sum: 1 },
+    //       uniqueEntries: { $addToSet: "$title" }, // Will count size later
+    //       totalLikes: { $sum: { $size: { $ifNull: ["$likes", []] } } },
+    //       totalComments: { $sum: { $size: { $ifNull: ["$comments", []] } } },
+    //     },
+    //   },
+    //   {
+    //     $project: {
+    //       totalEntries: 1,
+    //       uniqueEntriesCount: { $size: "$uniqueEntries" },
+    //       totalLikes: 1,
+    //       totalComments: 1,
+    //     },
+    //   },
+    // ]);
+
     // Step 3: Aggregate additional stats by department (posts)
-    // Total Entries, Unique Entries (count distinct titles), Total Likes, Total Comments
+    // Total Entries, Unique Participants (count distinct authors), Total Likes, Total Comments
     const deptStats = await Post.aggregate([
       {
         $group: {
           _id: "$department",
           totalEntries: { $sum: 1 },
-          uniqueEntries: { $addToSet: "$title" }, // Will count size later
+
+          // Use author ID to get a set of unique participants
+          uniqueParticipants: { $addToSet: "$author.id" },
+
           totalLikes: { $sum: { $size: { $ifNull: ["$likes", []] } } },
           totalComments: { $sum: { $size: { $ifNull: ["$comments", []] } } },
         },
@@ -41,7 +66,10 @@ exports.getStats = async (req, res) => {
       {
         $project: {
           totalEntries: 1,
-          uniqueEntriesCount: { $size: "$uniqueEntries" },
+
+          // Rename the count to clearly indicate Unique Participants
+          uniqueEntriesCount: { $size: "$uniqueParticipants" },
+
           totalLikes: 1,
           totalComments: 1,
         },
