@@ -541,13 +541,19 @@ exports.getStatsByParticipantType = async (req, res) => {
       },
     ]);
 
-    // Aggregate additional stats by department
+    // Aggregate additional stats by department - UPDATED for unique participants
     const deptStats = await Post.aggregate([
       {
         $group: {
           _id: "$department",
           totalEntries: { $sum: 1 },
-          uniqueEntriesSet: { $addToSet: "$title" },
+          // Count unique participants instead of unique titles
+          uniqueParticipants: {
+            $addToSet: {
+              name: "$author.name",
+              department: "$author.department",
+            },
+          },
           totalLikes: { $sum: { $size: { $ifNull: ["$likes", []] } } },
           totalComments: { $sum: { $size: { $ifNull: ["$comments", []] } } },
         },
@@ -555,7 +561,7 @@ exports.getStatsByParticipantType = async (req, res) => {
       {
         $project: {
           totalEntries: 1,
-          uniqueEntries: { $size: "$uniqueEntriesSet" },
+          uniqueParticipantsCount: { $size: "$uniqueParticipants" }, // Updated field name
           totalLikes: 1,
           totalComments: 1,
         },
@@ -607,9 +613,10 @@ exports.getStatsByParticipantType = async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet("StatsByParticipantType");
 
+    // Updated column names
     const extraColumns = [
       "Total Entries",
-      "Unique Entries",
+      "Unique Participants", // Changed from "Unique Entries"
       "Total Likes",
       "Total Comments",
       // "Total Count of Department",
@@ -725,20 +732,26 @@ exports.getStatsByParticipantType = async (req, res) => {
         }
       }
 
-      // Fill additional stats columns
-      const stats = deptStatsMap[dept] || {};
+      // Fill additional stats columns - UPDATED for unique participants
+      const stats = deptStatsMap[dept] || {
+        totalEntries: 0,
+        uniqueParticipantsCount: 0, // Updated field name
+        totalLikes: 0,
+        totalComments: 0,
+      };
       const totalUsers = userCountsMap[dept] || 0;
 
       ws.getCell(rowIndex, colIndex++).value = stats.totalEntries || 0;
-      ws.getCell(rowIndex, colIndex++).value = stats.uniqueEntries || 0;
+      ws.getCell(rowIndex, colIndex++).value = stats.uniqueParticipantsCount || 0; // Updated
       ws.getCell(rowIndex, colIndex++).value = stats.totalLikes || 0;
       ws.getCell(rowIndex, colIndex++).value = stats.totalComments || 0;
       // ws.getCell(rowIndex, colIndex++).value = totalUsers;
 
-      // const uniqueParticipationPct = totalUsers > 0 ? (stats.uniqueEntries / totalUsers) * 100 : 0;
+      // If you want to include the percentage columns, uncomment and update these:
+      // const uniqueParticipationPct = totalUsers > 0 ? (stats.uniqueParticipantsCount / totalUsers) * 100 : 0;
       // ws.getCell(rowIndex, colIndex++).value = uniqueParticipationPct.toFixed(2) + "%";
 
-      // const participationPct = stats.totalEntries > 0 ? (stats.uniqueEntries / stats.totalEntries) * 100 : 0;
+      // const participationPct = stats.totalEntries > 0 ? (stats.uniqueParticipantsCount / stats.totalEntries) * 100 : 0;
       // ws.getCell(rowIndex, colIndex++).value = participationPct.toFixed(2) + "%";
 
       // // Department Scores (set 0 by default, customize if needed)
