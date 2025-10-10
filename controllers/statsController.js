@@ -289,6 +289,237 @@ exports.getStats = async (req, res) => {
   }
 };
 
+exports.getPostDetails = async (req, res) => {
+  try {
+    // Fetch all posts with populated author details and calculate likes/comments counts
+    const posts = await Post.aggregate([
+      {
+        $lookup: {
+          from: "users", // This should match your MongoDB collection name for users
+          let: {
+            authorName: "$author.name",
+            authorDepartment: "$author.department",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [{ $eq: ["$name", "$$authorName"] }, { $eq: ["$department", "$$authorDepartment"] }],
+                },
+              },
+            },
+            {
+              $project: {
+                employeeId: 1,
+                name: 1,
+                department: 1,
+              },
+            },
+          ],
+          as: "userDetails",
+        },
+      },
+      {
+        $unwind: {
+          path: "$userDetails",
+          preserveNullAndEmptyArrays: true, // In case no matching user is found
+        },
+      },
+      {
+        $project: {
+          title: 1,
+          employeeId: "$userDetails.employeeId",
+          authorName: "$author.name",
+          department: "$author.department",
+          category: 1,
+          postId: "$_id",
+          likesCount: { $size: { $ifNull: ["$likes", []] } },
+          commentsCount: { $size: { $ifNull: ["$comments", []] } },
+          createdAt: 1,
+        },
+      },
+      {
+        $sort: { createdAt: -1 }, // Sort by latest posts first
+      },
+    ]);
+
+    // Alternative approach if the aggregation above doesn't work well:
+    // If the aggregation is complex or slow, we can do it in two steps:
+    if (posts.length === 0) {
+      // Fallback: get posts and manually match with users
+      const allPosts = await Post.find({}).sort({ createdAt: -1 });
+      const allUsers = await User.find({}, { name: 1, department: 1, employeeId: 1 });
+
+      // Create a lookup map for users
+      const userMap = {};
+      allUsers.forEach((user) => {
+        const key = `${user.name.toLowerCase()}|${user.department.toLowerCase()}`;
+        userMap[key] = user;
+      });
+
+      // Process posts
+      const processedPosts = allPosts.map((post) => {
+        const key = `${post.author.name.toLowerCase()}|${post.author.department.toLowerCase()}`;
+        const user = userMap[key];
+
+        return {
+          title: post.title,
+          employeeId: user ? user.employeeId : "N/A",
+          authorName: post.author.name,
+          department: post.author.department,
+          category: post.category,
+          postId: post._id,
+          likesCount: Array.isArray(post.likes) ? post.likes.length : 0,
+          commentsCount: Array.isArray(post.comments) ? post.comments.length : 0,
+          createdAt: post.createdAt,
+        };
+      });
+
+      await generateExcelReport(processedPosts, res);
+    } else {
+      await generateExcelReport(posts, res);
+    }
+  } catch (err) {
+    console.error("Error in getPostDetails:", err);
+    res.status(500).send("Server Error");
+  }
+};
+
+// Helper function to generate Excel report
+async function generateExcelReport(posts, res) {
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet("Post Details");
+
+  // Define columns
+  ws.columns = [
+    { header: "Post Title", key: "title", width: 40 },
+    { header: "Employee ID", key: "employeeId", width: 15 },
+    { header: "Name of User", key: "authorName", width: 25 },
+    { header: "Department", key: "department", width: 20 },
+    { header: "Category", key: "category", width: 20 },
+    { header: "Post Link", key: "link", width: 50 },
+    { header: "Total Likes", key: "likesCount", width: 12 },
+    { header: "Total Comments", key: "commentsCount", width: 15 },
+  ];
+
+  // Style header row
+  const headerRow = ws.getRow(1);
+  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  headerRow.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF4682B4" }, // Steel blue
+  };
+  headerRow.alignment = { vertical: "middle", horizontal: "center" };
+
+  // Add data rows
+  posts.forEach((post) => {
+    const postLink = `https://itcshiningstars.cosmosevents.in/posts/${post.postId}`;
+
+    ws.addRow({
+      title: post.title,
+      employeeId: post.employeeId || "N/A",
+      authorName: post.authorName,
+      department: post.department,
+      category: post.category,
+      link: postLink,
+      likesCount: post.likesCount,
+      commentsCount: post.commentsCount,
+    });
+  });
+
+  // Style the data rows
+  ws.eachRow((row, rowNumber) => {
+    if (rowNumber > 1) {
+      // Skip header row
+      // Alternate row colors for better readability
+      if (rowNumber % 2 === 0) {
+        row.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF0F8FF" }, // Alice blue
+        };
+      }
+
+      // Center align numeric columns
+      row.getCell(7).alignment = { horizontal: "center" }; // Likes
+      row.getCell(8).alignment = { horizontal: "center" }; // Comments
+
+      // Make the link cell hyperlink style
+      const linkCell = row.getCell(6);
+      linkCell.font = {
+        color: { argb: "FF0000FF" },
+        underline: true,
+      };
+      linkCell.value = {
+        text: linkCell.value,
+        hyperlink: linkCell.value,
+      };
+    }
+  });
+
+  // Auto-fit columns based on content
+  ws.columns.forEach((column) => {
+    let maxLength = 0;
+    column.eachCell({ includeEmpty: true }, (cell) => {
+      let columnLength = cell.value ? cell.value.toString().length : 10;
+      if (columnLength > maxLength) {
+        maxLength = columnLength;
+      }
+    });
+    column.width = Math.min(Math.max(maxLength + 2, column.width), 50);
+  });
+
+  // Set headers for download
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="post_details_report.xlsx"');
+
+  await workbook.xlsx.write(res);
+  res.end();
+}
+
+// // Alternative simpler version without aggregation (more reliable)
+// exports.getPostDetailsSimple = async (req, res) => {
+//   try {
+//     // Get all posts sorted by creation date (newest first)
+//     const posts = await Post.find({}).sort({ createdAt: -1 });
+
+//     // Get all users for employeeId lookup
+//     const users = await User.find({}, { name: 1, department: 1, employeeId: 1 });
+
+//     // Create a fast lookup map for users
+//     const userLookup = {};
+//     users.forEach((user) => {
+//       const key = `${user.name.toLowerCase()}|${user.department.toLowerCase()}`;
+//       userLookup[key] = user;
+//     });
+
+//     // Process posts data
+//     const postData = posts.map((post) => {
+//       const userKey = `${post.author.name.toLowerCase()}|${post.author.department.toLowerCase()}`;
+//       const user = userLookup[userKey];
+
+//       return {
+//         title: post.title,
+//         employeeId: user ? user.employeeId : "N/A",
+//         authorName: post.author.name,
+//         department: post.author.department,
+//         category: post.category,
+//         postId: post._id,
+//         likesCount: Array.isArray(post.likes) ? post.likes.length : 0,
+//         commentsCount: Array.isArray(post.comments) ? post.comments.length : 0,
+//         link: `https://itcshiningstars.cosmosevents.in/posts/${post._id}`,
+//       };
+//     });
+
+//     // Generate Excel report
+//     await generateExcelReport(postData, res);
+//   } catch (err) {
+//     console.error("Error in getPostDetailsSimple:", err);
+//     res.status(500).send("Server Error");
+//   }
+// };
+
 exports.getStatsByParticipantType = async (req, res) => {
   try {
     // Fetch distinct keys
