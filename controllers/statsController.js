@@ -26,39 +26,20 @@ exports.getStats = async (req, res) => {
       },
     ]);
 
-    // // Step 3: Aggregate additional stats by department (posts)
-    // // Total Entries, Unique Entries (count distinct titles), Total Likes, Total Comments
-    // const deptStats = await Post.aggregate([
-    //   {
-    //     $group: {
-    //       _id: "$department",
-    //       totalEntries: { $sum: 1 },
-    //       uniqueEntries: { $addToSet: "$title" }, // Will count size later
-    //       totalLikes: { $sum: { $size: { $ifNull: ["$likes", []] } } },
-    //       totalComments: { $sum: { $size: { $ifNull: ["$comments", []] } } },
-    //     },
-    //   },
-    //   {
-    //     $project: {
-    //       totalEntries: 1,
-    //       uniqueEntriesCount: { $size: "$uniqueEntries" },
-    //       totalLikes: 1,
-    //       totalComments: 1,
-    //     },
-    //   },
-    // ]);
-
     // Step 3: Aggregate additional stats by department (posts)
-    // Total Entries, Unique Participants (count distinct authors), Total Likes, Total Comments
+    // Count UNIQUE PARTICIPANTS (users) instead of unique titles
     const deptStats = await Post.aggregate([
       {
         $group: {
           _id: "$department",
           totalEntries: { $sum: 1 },
-
-          // Use author ID to get a set of unique participants
-          uniqueParticipants: { $addToSet: "$author.id" },
-
+          // Count distinct users based on author name + department
+          uniqueParticipants: {
+            $addToSet: {
+              name: "$author.name",
+              department: "$author.department",
+            },
+          },
           totalLikes: { $sum: { $size: { $ifNull: ["$likes", []] } } },
           totalComments: { $sum: { $size: { $ifNull: ["$comments", []] } } },
         },
@@ -66,10 +47,7 @@ exports.getStats = async (req, res) => {
       {
         $project: {
           totalEntries: 1,
-
-          // Rename the count to clearly indicate Unique Participants
-          uniqueEntriesCount: { $size: "$uniqueParticipants" },
-
+          uniqueParticipantsCount: { $size: "$uniqueParticipants" }, // This now counts unique users
           totalLikes: 1,
           totalComments: 1,
         },
@@ -123,16 +101,15 @@ exports.getStats = async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet("Stats");
 
-    // Additional columns to add at the end (based on reference excel columns requested)
+    // Updated column names
     const extraColumns = [
       "Total Entries",
-      "Unique Entries",
+      "Unique Participants", // Changed from "Unique Entries"
       "Total Likes",
       "Total Comments",
       "Count of Dep.",
       "Unique Participation %",
       "Participation % of Dep.",
-      // "Department Scores",
     ];
 
     // Calculate total columns: dept + categories * participantTypes + extra columns
@@ -247,28 +224,25 @@ exports.getStats = async (req, res) => {
       // Fill additional stats columns
       const stats = deptStatsMap[dept] || {
         totalEntries: 0,
-        uniqueEntriesCount: 0,
+        uniqueParticipantsCount: 0, // Updated field name
         totalLikes: 0,
         totalComments: 0,
       };
       const totalUsers = userCountsMap[dept] || 0;
 
       ws.getCell(rowIndex, colIndex++).value = stats.totalEntries || 0;
-      ws.getCell(rowIndex, colIndex++).value = stats.uniqueEntriesCount || 0;
+      ws.getCell(rowIndex, colIndex++).value = stats.uniqueParticipantsCount || 0; // Updated
       ws.getCell(rowIndex, colIndex++).value = stats.totalLikes || 0;
       ws.getCell(rowIndex, colIndex++).value = stats.totalComments || 0;
       ws.getCell(rowIndex, colIndex++).value = totalUsers;
 
       // Calculate Unique Participation % by Employees if totalUsers > 0
-      const uniqueParticipationPercent = totalUsers > 0 ? (stats.uniqueEntriesCount / totalUsers) * 100 : 0;
+      const uniqueParticipationPercent = totalUsers > 0 ? (stats.uniqueParticipantsCount / totalUsers) * 100 : 0;
       ws.getCell(rowIndex, colIndex++).value = uniqueParticipationPercent.toFixed(2) + "%";
 
-      // Participation % of Department - assume as uniqueEntriesCount / totalEntries to indicate participation ratio
-      const participationPercent = stats.totalEntries > 0 ? (stats.uniqueEntriesCount / stats.totalEntries) * 100 : 0;
+      // Participation % of Department - ratio of unique participants to total entries
+      const participationPercent = stats.totalEntries > 0 ? (stats.uniqueParticipantsCount / stats.totalEntries) * 100 : 0;
       ws.getCell(rowIndex, colIndex++).value = participationPercent.toFixed(2) + "%";
-
-      // Department Scores - since not clearly defined, we can set as 0 or some metric, optionally you can add your logic here
-      // ws.getCell(rowIndex, colIndex++).value = 0;
 
       rowIndex++;
     }
