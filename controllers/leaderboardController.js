@@ -5,7 +5,9 @@ const User = require("../models/User");
 exports.getDepartmentLeaderboard = async (req, res) => {
   try {
     // Aggregate likes, submissions, participants, engagement by department
+    // Only consider published posts for leaderboard calculations
     const departments = await Post.aggregate([
+      { $match: { status: "published" } },
       {
         $group: {
           _id: "$department",
@@ -40,7 +42,9 @@ exports.getDepartmentLeaderboard = async (req, res) => {
 exports.getIndividualLeaderboard = async (req, res) => {
   try {
     // Aggregate likes, submissions by user
+    // Only consider published posts for individual rankings
     const individuals = await Post.aggregate([
+      { $match: { status: "published" } },
       {
         $group: {
           _id: "$author.name",
@@ -76,7 +80,9 @@ exports.getIndividualLeaderboard = async (req, res) => {
 exports.getCategoryLeaders = async (req, res) => {
   try {
     // Aggregate likes, submissions by category
+    // Only consider published posts for category leaders
     const categories = await Post.aggregate([
+      { $match: { status: "published" } },
       {
         $group: {
           _id: "$category",
@@ -107,7 +113,9 @@ exports.getSubmissionsThisWeek = async (req, res) => {
   try {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    // Count only published posts created in the last 7 days
     const count = await Post.countDocuments({
+      status: "published",
       createdAt: { $gte: sevenDaysAgo },
     });
     res.json({ count });
