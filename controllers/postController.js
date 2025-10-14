@@ -1,4 +1,5 @@
 const Post = require("../models/Post");
+const User = require("../models/User");
 
 // exports.createPost = async (req, res) => {
 //   try {
@@ -138,11 +139,20 @@ exports.createPost = async (req, res) => {
 // Get all posts
 exports.getPosts = async (req, res) => {
   try {
-    const posts = await Post.find()
-      .populate("author", "name avatar")
-      .populate("comments.user", "name department") // ✅ add this
-      .sort({ createdAt: -1 });
-    res.json(posts);
+    const posts = await Post.find().populate("author", "name avatar").populate("comments.user", "name department").sort({ createdAt: -1 });
+
+    // Map likes separately to get names
+    const postsWithLikerNames = await Promise.all(
+      posts.map(async (post) => {
+        const likerUsers = await User.find({ _id: { $in: post.likes } }).select("name");
+        return {
+          ...post.toObject(),
+          likerNames: likerUsers.map((u) => u.name),
+        };
+      })
+    );
+
+    res.json(postsWithLikerNames);
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
