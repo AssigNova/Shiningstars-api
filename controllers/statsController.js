@@ -5,6 +5,95 @@ const Post = require("../models/Post"); // adjust path
 const User = require("../models/User"); // adjust path
 
 const router = express.Router();
+
+// Get number of likes per user and generate Excel sheet
+exports.getUserLikeStats = async (req, res) => {
+  try {
+    const userLikeStats = await Post.aggregate([
+      // Unwind the likes array to create a document for each like
+      { $unwind: { path: "$likes", preserveNullAndEmptyArrays: false } },
+      // Group by user ID who liked the posts
+      {
+        $group: {
+          _id: "$likes.userId",
+          totalLikes: { $sum: 1 },
+          userName: { $first: "$likes.userName" },
+        },
+      },
+      // Sort by total likes in descending order
+      { $sort: { totalLikes: -1 } },
+      // Lookup user details
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      // Add user department and other details
+      {
+        $project: {
+          _id: 1,
+          userName: 1,
+          totalLikes: 1,
+          department: { $arrayElemAt: ["$userDetails.department", 0] },
+        },
+      },
+    ]);
+
+    // Create a new workbook and worksheet
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("User Likes Statistics");
+
+    // Add headers
+    worksheet.columns = [
+      { header: "User Name", key: "userName", width: 30 },
+      { header: "Department", key: "department", width: 30 },
+      { header: "Total Likes Given", key: "totalLikes", width: 20 },
+    ];
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE0E0E0" },
+    };
+
+    // Add data rows
+    userLikeStats.forEach((user) => {
+      worksheet.addRow({
+        userName: user.userName || "N/A",
+        department: user.department || "N/A",
+        totalLikes: user.totalLikes,
+      });
+    });
+
+    // Add total row at the bottom
+    const totalRow = worksheet.addRow({
+      userName: "TOTAL",
+      department: "",
+      totalLikes: userLikeStats.reduce((sum, user) => sum + user.totalLikes, 0),
+    });
+    totalRow.font = { bold: true };
+
+    // Set content type and headers for file download
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=user-likes-statistics.xlsx");
+
+    // Write the workbook to the response
+    await workbook.xlsx.write(res);
+  } catch (error) {
+    console.error("Error generating user like stats excel:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error generating user like statistics excel",
+      error: error.message,
+    });
+  }
+};
+
 exports.getStats = async (req, res) => {
   try {
     // Step 1: Fetch distinct keys
