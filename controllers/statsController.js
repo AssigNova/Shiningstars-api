@@ -6,89 +6,109 @@ const User = require("../models/User"); // adjust path
 
 const router = express.Router();
 
-// Get number of likes per user and generate Excel sheet
-exports.getUserLikeStats = async (req, res) => {
+exports.generateUserLikesReport = async (req, res) => {
   try {
-    const userLikeStats = await Post.aggregate([
-      // Unwind the likes array to create a document for each like
-      { $unwind: { path: "$likes", preserveNullAndEmptyArrays: false } },
-      // Group by user ID who liked the posts
-      {
-        $group: {
-          _id: "$likes.userId",
-          totalLikes: { $sum: 1 },
-          userName: { $first: "$likes.userName" },
-        },
-      },
-      // Sort by total likes in descending order
-      { $sort: { totalLikes: -1 } },
-      // Lookup user details
-      {
-        $lookup: {
-          from: "users",
-          localField: "_id",
-          foreignField: "_id",
-          as: "userDetails",
-        },
-      },
-      // Add user department and other details
-      {
-        $project: {
-          _id: 1,
-          userName: 1,
-          totalLikes: 1,
-          department: { $arrayElemAt: ["$userDetails.department", 0] },
-        },
-      },
-    ]);
+    // Aggregate likes data from posts, comments, and replies
+    const posts = await Post.find()
+      .populate("likes", "name email employeeId department")
+      .populate("comments.user", "name email employeeId department")
+      .populate("comments.likes", "name email employeeId department")
+      .populate("comments.replies.user", "name email employeeId department")
+      .populate("comments.replies.likes", "name email employeeId department");
 
-    // Create a new workbook and worksheet
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("User Likes Statistics");
+    // Create a map to store user like counts
+    const userLikesMap = new Map();
 
-    // Add headers
-    worksheet.columns = [
-      { header: "User Name", key: "userName", width: 30 },
-      { header: "Department", key: "department", width: 30 },
-      { header: "Total Likes Given", key: "totalLikes", width: 20 },
-    ];
-
-    // Style the header row
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFE0E0E0" },
+    // Helper function to count likes
+    const countLikes = (likesArray, user) => {
+      if (!user) return;
+      const userId = user._id.toString();
+      const currentCount = userLikesMap.get(userId)?.likeCount || 0;
+      userLikesMap.set(userId, {
+        user: userLikesMap.get(userId)?.user || user,
+        likeCount: currentCount + likesArray.length,
+      });
     };
 
-    // Add data rows
-    userLikeStats.forEach((user) => {
-      worksheet.addRow({
-        userName: user.userName || "N/A",
-        department: user.department || "N/A",
-        totalLikes: user.totalLikes,
+    // Process each post
+    posts.forEach((post) => {
+      // Count post likes
+      post.likes.forEach((user) => {
+        countLikes([post._id], user); // Each like is one count
+      });
+
+      // Process comments
+      post.comments.forEach((comment) => {
+        // Count comment likes
+        comment.likes.forEach((user) => {
+          countLikes([comment._id], user);
+        });
+
+        // Process replies
+        comment.replies.forEach((reply) => {
+          // Count reply likes
+          reply.likes.forEach((user) => {
+            countLikes([reply._id], user);
+          });
+        });
       });
     });
 
-    // Add total row at the bottom
-    const totalRow = worksheet.addRow({
-      userName: "TOTAL",
-      department: "",
-      totalLikes: userLikeStats.reduce((sum, user) => sum + user.totalLikes, 0),
+    // Convert map to array and sort by like count (descending)
+    const userLikesData = Array.from(userLikesMap.values()).sort((a, b) => b.likeCount - a.likeCount);
+
+    // Create Excel workbook and worksheet
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("User Likes Report");
+
+    // Define columns
+    worksheet.columns = [
+      { header: "Employee ID", key: "employeeId", width: 15 },
+      { header: "Name", key: "name", width: 25 },
+      { header: "Email", key: "email", width: 30 },
+      { header: "Department", key: "department", width: 20 },
+      { header: "Total Likes Given", key: "likeCount", width: 18 },
+    ];
+
+    // Add data rows
+    userLikesData.forEach((userData) => {
+      worksheet.addRow({
+        employeeId: userData.user.employeeId,
+        name: userData.user.name,
+        email: userData.user.email,
+        department: userData.user.department,
+        likeCount: userData.likeCount,
+      });
     });
-    totalRow.font = { bold: true };
 
-    // Set content type and headers for file download
+    // Style header row
+    worksheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE6E6FA" },
+      };
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    });
+
+    // Set response headers for file download
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", "attachment; filename=user-likes-statistics.xlsx");
+    res.setHeader("Content-Disposition", "attachment; filename=user-likes-report.xlsx");
 
-    // Write the workbook to the response
+    // Write workbook to response
     await workbook.xlsx.write(res);
+    res.end();
   } catch (error) {
-    console.error("Error generating user like stats excel:", error);
+    console.error("Error generating user likes report:", error);
     res.status(500).json({
       success: false,
-      message: "Error generating user like statistics excel",
+      message: "Failed to generate user likes report",
       error: error.message,
     });
   }

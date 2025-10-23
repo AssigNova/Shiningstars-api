@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const {
-  getUserLikeStats,
+  generateUserLikesReport,
   getStats,
   getUserStats,
   getEntryStats,
@@ -13,7 +13,7 @@ router.get("/getStats", getStats);
 router.get("/getPostsStats", getPostDetails);
 router.get("/getUserStats", getUserStats);
 router.get("/getEntryStats", getEntryStats);
-router.get("/getLikesStats", getUserLikeStats);
+router.get("/getLikesStats", generateUserLikesReport);
 router.get("/getStatsByParticipantType", getStatsByParticipantType);
 
 module.exports = router;
