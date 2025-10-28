@@ -3,7 +3,7 @@ const xlsx = require("xlsx");
 const axios = require("axios");
 
 // Path to your Excel file
-const filePath = "./users2.xlsx";
+const filePath = "./AuditUsersData.xlsx";
 
 // Load workbook
 const workbook = xlsx.readFile(filePath);
@@ -47,7 +47,7 @@ function excelDateToISO(excelDate) {
 }
 
 async function registerUsers() {
-  for (let i = 266; i < rows.length; i++) {
+  for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const employeeId = row[0]; // column A
     const name = row[2]; // column C
