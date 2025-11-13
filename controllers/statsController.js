@@ -441,7 +441,7 @@ exports.getPostDetails = async (req, res) => {
           authorName: "$author.name",
           department: "$author.department",
           category: 1,
-          participantType: 1, // <--- ADDED THIS LINE to include participantType
+          participantType: 1, // ADD THIS LINE
           postId: "$_id",
           likesCount: { $size: { $ifNull: ["$likes", []] } },
           commentsCount: { $size: { $ifNull: ["$comments", []] } },
@@ -478,7 +478,7 @@ exports.getPostDetails = async (req, res) => {
           authorName: post.author.name,
           department: post.author.department,
           category: post.category,
-          participantType: post.participantType, // <--- ADDED THIS LINE in fallback
+          participantType: post.participantType, // ADD THIS LINE
           postId: post._id,
           likesCount: Array.isArray(post.likes) ? post.likes.length : 0,
           commentsCount: Array.isArray(post.comments) ? post.comments.length : 0,
@@ -501,13 +501,14 @@ async function generateExcelReport(posts, res) {
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet("Post Details");
 
-  // Define columns
+  // Define columns - ADDED PARTICIPANT TYPE COLUMN
   ws.columns = [
     { header: "Post Title", key: "title", width: 40 },
     { header: "Employee ID", key: "employeeId", width: 15 },
     { header: "Name of User", key: "authorName", width: 25 },
     { header: "Department", key: "department", width: 20 },
     { header: "Category", key: "category", width: 20 },
+    { header: "Participant Type", key: "participantType", width: 20 }, // NEW COLUMN
     { header: "Post Link", key: "link", width: 50 },
     { header: "Total Likes", key: "likesCount", width: 12 },
     { header: "Total Comments", key: "commentsCount", width: 15 },
@@ -533,6 +534,7 @@ async function generateExcelReport(posts, res) {
       authorName: post.authorName,
       department: post.department,
       category: post.category,
+      participantType: post.participantType || "N/A", // ADDED THIS FIELD
       link: postLink,
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
@@ -553,11 +555,11 @@ async function generateExcelReport(posts, res) {
       }
 
       // Center align numeric columns
-      row.getCell(7).alignment = { horizontal: "center" }; // Likes
-      row.getCell(8).alignment = { horizontal: "center" }; // Comments
+      row.getCell(8).alignment = { horizontal: "center" }; // Likes (now column 8)
+      row.getCell(9).alignment = { horizontal: "center" }; // Comments (now column 9)
 
-      // Make the link cell hyperlink style
-      const linkCell = row.getCell(6);
+      // Make the link cell hyperlink style (now column 7)
+      const linkCell = row.getCell(7);
       linkCell.font = {
         color: { argb: "FF0000FF" },
         underline: true,
