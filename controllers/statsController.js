@@ -10,7 +10,7 @@ exports.generateUserLikesReport = async (req, res) => {
   try {
     // Aggregate likes data from posts, comments, and replies
     const posts = await Post.find()
-      .populate("likes", "name email employeeId department")
+      .populate("likes", "name email employeeId department participantType") // NOTE: Added participantType here, ASSUMING it exists on the User model (which it doesn't in your schema).
       .populate("comments.user", "name email employeeId department")
       .populate("comments.likes", "name email employeeId department")
       .populate("comments.replies.user", "name email employeeId department")
@@ -61,12 +61,14 @@ exports.generateUserLikesReport = async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("User Likes Report");
 
-    // Define columns
+    // Define columns - ADDING 'Participant Type'
     worksheet.columns = [
       { header: "Employee ID", key: "employeeId", width: 15 },
       { header: "Name", key: "name", width: 25 },
       { header: "Email", key: "email", width: 30 },
       { header: "Department", key: "department", width: 20 },
+      // NEW COLUMN: Participant Type
+      { header: "Participant Type", key: "participantType", width: 20 },
       { header: "Total Likes Given", key: "likeCount", width: 18 },
     ];
 
@@ -77,11 +79,13 @@ exports.generateUserLikesReport = async (req, res) => {
         name: userData.user.name,
         email: userData.user.email,
         department: userData.user.department,
+        // NEW FIELD: Assumes participantType is available on the user object
+        participantType: userData.user.participantType || "N/A",
         likeCount: userData.likeCount,
       });
     });
 
-    // Style header row
+    // Style header row (rest of the styling remains the same)
     worksheet.getRow(1).eachCell((cell) => {
       cell.font = { bold: true };
       cell.fill = {
