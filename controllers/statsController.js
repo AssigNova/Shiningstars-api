@@ -5,71 +5,69 @@ const Post = require("../models/Post"); // adjust path
 const User = require("../models/User"); // adjust path
 
 const router = express.Router();
-
 exports.generateUserLikesReport = async (req, res) => {
   try {
-    // Aggregate likes data from posts, comments, and replies
     const posts = await Post.find()
-      .populate("likes", "name email employeeId department participantType") // NOTE: Added participantType here, ASSUMING it exists on the User model (which it doesn't in your schema).
+      .populate("likes", "name email employeeId department")
       .populate("comments.user", "name email employeeId department")
       .populate("comments.likes", "name email employeeId department")
       .populate("comments.replies.user", "name email employeeId department")
       .populate("comments.replies.likes", "name email employeeId department");
 
-    // Create a map to store user like counts
     const userLikesMap = new Map();
 
-    // Helper function to count likes
-    const countLikes = (likesArray, user) => {
+    // Helper function to count likes and track participant types
+    const countLikes = (likesArray, user, participantType) => {
       if (!user) return;
       const userId = user._id.toString();
-      const currentCount = userLikesMap.get(userId)?.likeCount || 0;
-      userLikesMap.set(userId, {
-        user: userLikesMap.get(userId)?.user || user,
-        likeCount: currentCount + likesArray.length,
-      });
+      const currentData = userLikesMap.get(userId) || {
+        user,
+        likeCount: 0,
+        participantTypes: new Set(),
+      };
+
+      currentData.likeCount += likesArray.length;
+      if (participantType) currentData.participantTypes.add(participantType);
+
+      userLikesMap.set(userId, currentData);
     };
 
     // Process each post
     posts.forEach((post) => {
       // Count post likes
       post.likes.forEach((user) => {
-        countLikes([post._id], user); // Each like is one count
+        countLikes([post._id], user, post.participantType);
       });
 
       // Process comments
       post.comments.forEach((comment) => {
-        // Count comment likes
         comment.likes.forEach((user) => {
-          countLikes([comment._id], user);
+          countLikes([comment._id], user, post.participantType);
         });
 
         // Process replies
         comment.replies.forEach((reply) => {
-          // Count reply likes
           reply.likes.forEach((user) => {
-            countLikes([reply._id], user);
+            countLikes([reply._id], user, post.participantType);
           });
         });
       });
     });
 
-    // Convert map to array and sort by like count (descending)
+    // Convert map to array and sort by like count
     const userLikesData = Array.from(userLikesMap.values()).sort((a, b) => b.likeCount - a.likeCount);
 
-    // Create Excel workbook and worksheet
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("User Likes Report");
 
-    // Define columns - ADDING 'Participant Type'
+    // Add new Participant Type column
     worksheet.columns = [
       { header: "Employee ID", key: "employeeId", width: 15 },
       { header: "Name", key: "name", width: 25 },
       { header: "Email", key: "email", width: 30 },
       { header: "Department", key: "department", width: 20 },
-      // NEW COLUMN: Participant Type
-      { header: "Participant Type", key: "participantType", width: 20 },
       { header: "Total Likes Given", key: "likeCount", width: 18 },
+      { header: "Participant Types", key: "participantTypes", width: 25 },
     ];
 
     // Add data rows
@@ -79,13 +77,12 @@ exports.generateUserLikesReport = async (req, res) => {
         name: userData.user.name,
         email: userData.user.email,
         department: userData.user.department,
-        // NEW FIELD: Assumes participantType is available on the user object
-        participantType: userData.user.participantType || "N/A",
         likeCount: userData.likeCount,
+        participantTypes: Array.from(userData.participantTypes).join(", "),
       });
     });
 
-    // Style header row (rest of the styling remains the same)
+    // Style header row
     worksheet.getRow(1).eachCell((cell) => {
       cell.font = { bold: true };
       cell.fill = {
@@ -101,11 +98,9 @@ exports.generateUserLikesReport = async (req, res) => {
       };
     });
 
-    // Set response headers for file download
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=user-likes-report.xlsx");
 
-    // Write workbook to response
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
