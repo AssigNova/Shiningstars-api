@@ -441,6 +441,7 @@ exports.getPostDetails = async (req, res) => {
           authorName: "$author.name",
           department: "$author.department",
           category: 1,
+          participantType: 1, // <--- ADDED THIS LINE to include participantType
           postId: "$_id",
           likesCount: { $size: { $ifNull: ["$likes", []] } },
           commentsCount: { $size: { $ifNull: ["$comments", []] } },
@@ -477,6 +478,7 @@ exports.getPostDetails = async (req, res) => {
           authorName: post.author.name,
           department: post.author.department,
           category: post.category,
+          participantType: post.participantType, // <--- ADDED THIS LINE in fallback
           postId: post._id,
           likesCount: Array.isArray(post.likes) ? post.likes.length : 0,
           commentsCount: Array.isArray(post.comments) ? post.comments.length : 0,
@@ -1029,9 +1031,8 @@ exports.getEntryStats = async (req, res) => {
       };
     });
 
-    // Aggregate post count and participant types for each user
+    // Aggregate post count for each user
     const posts = await Post.find({});
-    // Changed structure to track participantTypes as a Set (for uniqueness)
     const userStats = {};
 
     // Collect all normalized keys from posts and count entries
@@ -1045,41 +1046,30 @@ exports.getEntryStats = async (req, res) => {
           name: post.author.name,
           department: post.author.department,
           entries: 0,
-          // Use a Set to store unique participant types efficiently
-          participantTypes: new Set(),
         };
       }
       userStats[authorKey].entries += 1; // Increment the entry count for the author
-      if (post.participantType) {
-        userStats[authorKey].participantTypes.add(post.participantType);
-      }
     });
 
-    // Convert to array and format participantTypes
+    // Convert to array
     const userArray = Object.values(userStats)
       .map((u) => ({
         ID: u.employeeId,
         Name: u.name,
         Department: u.department,
         Entries: u.entries,
-        // Convert the Set to a comma-separated string for the Excel cell
-        ParticipantTypes: Array.from(u.participantTypes).join(", "),
       }))
       .filter((u) => u.ID && u.Name);
 
     // Generate Excel
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet("User Entry Stats");
-
-    // *** NEW: Added 'Participant Types' column definition ***
     ws.columns = [
       { header: "Name", width: 28 },
       { header: "Employee ID", width: 15 },
       { header: "Department", width: 23 },
       { header: "Entry", width: 14 },
-      { header: "Participant Types", width: 25 }, // New column
     ];
-
     ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
     ws.getRow(1).fill = {
       type: "pattern",
@@ -1089,8 +1079,7 @@ exports.getEntryStats = async (req, res) => {
 
     // Add user rows
     userArray.forEach((u) => {
-      // *** NEW: Added u.ParticipantTypes to the row data ***
-      ws.addRow([u.Name, u.ID, u.Department, u.Entries, u.ParticipantTypes]);
+      ws.addRow([u.Name, u.ID, u.Department, u.Entries]);
     });
 
     // Download
