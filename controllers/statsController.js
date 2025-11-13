@@ -5,8 +5,10 @@ const Post = require("../models/Post"); // adjust path
 const User = require("../models/User"); // adjust path
 
 const router = express.Router();
+
 exports.generateUserLikesReport = async (req, res) => {
   try {
+    // Aggregate likes data from posts, comments, and replies
     const posts = await Post.find()
       .populate("likes", "name email employeeId department")
       .populate("comments.user", "name email employeeId department")
@@ -14,60 +16,58 @@ exports.generateUserLikesReport = async (req, res) => {
       .populate("comments.replies.user", "name email employeeId department")
       .populate("comments.replies.likes", "name email employeeId department");
 
+    // Create a map to store user like counts
     const userLikesMap = new Map();
 
-    // Helper function to count likes and track participant types
-    const countLikes = (likesArray, user, participantType) => {
+    // Helper function to count likes
+    const countLikes = (likesArray, user) => {
       if (!user) return;
       const userId = user._id.toString();
-      const currentData = userLikesMap.get(userId) || {
-        user,
-        likeCount: 0,
-        participantTypes: new Set(),
-      };
-
-      currentData.likeCount += likesArray.length;
-      if (participantType) currentData.participantTypes.add(participantType);
-
-      userLikesMap.set(userId, currentData);
+      const currentCount = userLikesMap.get(userId)?.likeCount || 0;
+      userLikesMap.set(userId, {
+        user: userLikesMap.get(userId)?.user || user,
+        likeCount: currentCount + likesArray.length,
+      });
     };
 
     // Process each post
     posts.forEach((post) => {
       // Count post likes
       post.likes.forEach((user) => {
-        countLikes([post._id], user, post.participantType);
+        countLikes([post._id], user); // Each like is one count
       });
 
       // Process comments
       post.comments.forEach((comment) => {
+        // Count comment likes
         comment.likes.forEach((user) => {
-          countLikes([comment._id], user, post.participantType);
+          countLikes([comment._id], user);
         });
 
         // Process replies
         comment.replies.forEach((reply) => {
+          // Count reply likes
           reply.likes.forEach((user) => {
-            countLikes([reply._id], user, post.participantType);
+            countLikes([reply._id], user);
           });
         });
       });
     });
 
-    // Convert map to array and sort by like count
+    // Convert map to array and sort by like count (descending)
     const userLikesData = Array.from(userLikesMap.values()).sort((a, b) => b.likeCount - a.likeCount);
 
+    // Create Excel workbook and worksheet
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("User Likes Report");
 
-    // Add new Participant Type column
+    // Define columns
     worksheet.columns = [
       { header: "Employee ID", key: "employeeId", width: 15 },
       { header: "Name", key: "name", width: 25 },
       { header: "Email", key: "email", width: 30 },
       { header: "Department", key: "department", width: 20 },
       { header: "Total Likes Given", key: "likeCount", width: 18 },
-      { header: "Participant Types", key: "participantTypes", width: 25 },
     ];
 
     // Add data rows
@@ -78,7 +78,6 @@ exports.generateUserLikesReport = async (req, res) => {
         email: userData.user.email,
         department: userData.user.department,
         likeCount: userData.likeCount,
-        participantTypes: Array.from(userData.participantTypes).join(", "),
       });
     });
 
@@ -98,9 +97,11 @@ exports.generateUserLikesReport = async (req, res) => {
       };
     });
 
+    // Set response headers for file download
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=user-likes-report.xlsx");
 
+    // Write workbook to response
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -1028,8 +1029,9 @@ exports.getEntryStats = async (req, res) => {
       };
     });
 
-    // Aggregate post count for each user
+    // Aggregate post count and participant types for each user
     const posts = await Post.find({});
+    // Changed structure to track participantTypes as a Set (for uniqueness)
     const userStats = {};
 
     // Collect all normalized keys from posts and count entries
@@ -1043,30 +1045,41 @@ exports.getEntryStats = async (req, res) => {
           name: post.author.name,
           department: post.author.department,
           entries: 0,
+          // Use a Set to store unique participant types efficiently
+          participantTypes: new Set(),
         };
       }
       userStats[authorKey].entries += 1; // Increment the entry count for the author
+      if (post.participantType) {
+        userStats[authorKey].participantTypes.add(post.participantType);
+      }
     });
 
-    // Convert to array
+    // Convert to array and format participantTypes
     const userArray = Object.values(userStats)
       .map((u) => ({
         ID: u.employeeId,
         Name: u.name,
         Department: u.department,
         Entries: u.entries,
+        // Convert the Set to a comma-separated string for the Excel cell
+        ParticipantTypes: Array.from(u.participantTypes).join(", "),
       }))
       .filter((u) => u.ID && u.Name);
 
     // Generate Excel
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet("User Entry Stats");
+
+    // *** NEW: Added 'Participant Types' column definition ***
     ws.columns = [
       { header: "Name", width: 28 },
       { header: "Employee ID", width: 15 },
       { header: "Department", width: 23 },
       { header: "Entry", width: 14 },
+      { header: "Participant Types", width: 25 }, // New column
     ];
+
     ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
     ws.getRow(1).fill = {
       type: "pattern",
@@ -1076,7 +1089,8 @@ exports.getEntryStats = async (req, res) => {
 
     // Add user rows
     userArray.forEach((u) => {
-      ws.addRow([u.Name, u.ID, u.Department, u.Entries]);
+      // *** NEW: Added u.ParticipantTypes to the row data ***
+      ws.addRow([u.Name, u.ID, u.Department, u.Entries, u.ParticipantTypes]);
     });
 
     // Download
